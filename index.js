@@ -11,8 +11,44 @@ const { PORT, accessToken, webhookPath, secret } = config;
 let client = new Client();
 
 /** git hub webhook handler **/
-let handler = webhook({ path: webhookPath, secret: secret });
+let handler = webhook({ path: `/${webhookPath}`, secret: secret });
 
+
+/**
+* Creating webhook for the specified github repo
+*/
+async function createWebhook(repo, url) {
+  let args = {
+    data: {
+      'name': webhookPath,
+      'active': true,
+      'events': ['push', 'pull_request'],
+      'config': {
+        'url': url,
+        'content_type': 'json',
+        'secret': secret
+      }
+    },
+    headers: {
+      'User-Agent': 'request',
+      'Content-Type': 'application/json',
+      'X-Hub-Signature': 'request'
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    client.post(`${repo}?access_token=${accessToken}`, args, (data, response) => {
+      if(data) {
+        console.log('Created webhook');
+        console.log(data);
+        resolve(data);
+      } else {
+        console.error(`Error on creating webhook: ${response.body}`);
+        reject();
+      }
+    });
+  });
+};
 
 /**
 * Async function for updating the statues for the github repo, for a Pull request / individual commit
@@ -66,7 +102,7 @@ async function updateStatus(proc, repo, status, commit = '') {
 * @param cloneURL - github project to clone
 * @param cwd - current working directory
 */
-async function makeBuild(cloneURL, cwd) {
+function makeBuild(cloneURL, cwd) {
   if(!fs.existsSync(cwd)) {
     shell.mkdir('-p', cwd);
     shell.exec(`git clone ${cloneURL} ${cwd}`);
@@ -161,6 +197,8 @@ handler.on('pull_request', (event) => {
 });
 
 
+
+
 /** Running the server instance **/
 http.createServer((req, res) => {
   handler(req, res, err => {
@@ -173,5 +211,6 @@ http.createServer((req, res) => {
     console.log(`Error in listening on port 7777`);
   } else {
     console.log(`Waiting events from webhook`);
+    // createWebhook('https://api.github.com/repos/SanthoshRaju91/apollo-node-mongo/hooks', `http://7c77fc79.ngrok.io/${webhookPath}`);
   }
 });
