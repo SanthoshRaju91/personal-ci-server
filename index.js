@@ -16,6 +16,9 @@ let handler = webhook({ path: `/${webhookPath}`, secret: secret });
 
 /**
 * Creating webhook for the specified github repo
+* @method createWebhook
+* @param repo - repository to configure
+* @param url - creating a server URL to configure with webhook.
 */
 async function createWebhook(repo, url) {
   let args = {
@@ -102,7 +105,7 @@ async function updateStatus(proc, repo, status, commit = '') {
 * @param cloneURL - github project to clone
 * @param cwd - current working directory
 */
-function makeBuild(cloneURL, cwd) {
+function makeBuild(cloneURL, cwd, outputFile) {
   if(!fs.existsSync(cwd)) {
     shell.mkdir('-p', cwd);
     shell.exec(`git clone ${cloneURL} ${cwd}`);
@@ -113,7 +116,7 @@ function makeBuild(cloneURL, cwd) {
   }
 
   shell.exec(`npm install`);
-  return shell.exec(`npm test`);
+  return shell.exec(`npm test >> /Users/santhoshraju/Documents/github-node-webhook/${outputFile}`);
 }
 
 /**
@@ -121,7 +124,7 @@ function makeBuild(cloneURL, cwd) {
 * @method buildProcess
 * @param repository - github API event object
 */
-async function buildProcess(repository) {
+async function buildProcess(repository, outputFile) {
   await updateStatus(
     'Commit',
     repository.repository.statuses_url,
@@ -134,7 +137,7 @@ async function buildProcess(repository) {
 
   let cwd = `/Users/santhoshraju/Documents/github-node-webhook/PRS/${repository.head_commit.id}`;
 
-  let code = makeBuild(repository.repository.clone_url, cwd);
+  let code = makeBuild(repository.repository.clone_url, cwd, outputFile);
 
   let state = (code.code === 1) ? 'failure' : 'success';
   let description = (code.code === 1) ? 'Build & tests failed' : 'Build & test case execution success';
@@ -148,6 +151,8 @@ async function buildProcess(repository) {
     },
     repository.head_commit.id
   );
+
+  return code.code;
 };
 
 
@@ -183,20 +188,51 @@ async function buildPRProcess(repository) {
 };
 
 /**
+* Async function for deploying code to the server directory.
+* @method deployProcess
+* @param repository - code repository to deploy
+*/
+async function deployProcess(repository) {
+  try {
+    let outputFile = `${config.output}${Date.now()}.txt`;
+    await shell.exec(`touch ${outputFile}`);
+    let buildStatus = await buildProcess(repository, outputFile);
+
+    if(buildStatus === 0) {
+      console.log('build successfull');
+      // TODO 1. Bring the server down
+      // TODO 2. Deploy the code to server directory
+      // TODO 3. Bring the server up
+      // TODO 4. Send email to group with success status
+    } else {
+      console.log('build failed');
+      // TODO 1. Send email to group with failure report
+    }
+  } catch (err) {
+    console.error(`Something went wrong ${err}`);
+  }
+}
+
+/**
 * Handler for individual commits.
 */
 handler.on('push', (event) => {
-  buildProcess(event.payload);
+
+  /* If my code is merged to develop branch, I would take the latest pull and deploy to the server */
+  if(config.deployFor.indexOf(event.payload.ref) >= 0) {
+    console.log('Deployment process started');
+    deployProcess(event.payload);
+  } else {
+    // buildProcess(event.payload);
+  }
 });
 
 /**
 * Handler for open, close, updates to the Pull Requests
 */
 handler.on('pull_request', (event) => {
-  buildPRProcess(event.payload);
+  // buildPRProcess(event.payload);
 });
-
-
 
 
 /** Running the server instance **/
